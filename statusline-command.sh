@@ -2,6 +2,7 @@
 # Claude Code status line: model name + context bar (orange) + usage bar (dark green)
 input=$(cat)
 
+
 model=$(echo "$input" | jq -r '.model.display_name // empty')
 # Strip leading "Claude " prefix for brevity (e.g. "Claude Opus 4" -> "Opus 4")
 model="${model#Claude }"
@@ -91,14 +92,25 @@ horange=$'\033[1;38;5;208m'  # bright bold orange — highlights the context num
 yellow=$'\033[38;5;220m'
 red=$'\033[38;5;196m'
 dkgreen=$'\033[38;5;28m'
+green=$'\033[38;5;40m'       # green — untracked file count
 hgreen=$'\033[1;38;5;46m'   # bright bold green — highlights the usage number
 
-# Git segment: branch + dirty marker + ahead/behind (empty outside a repo).
+# Git segment: branch + modified/untracked counts + ahead/behind (empty outside a repo).
 git_seg=""
 if branch=$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null \
             || git -C "$dir" rev-parse --short HEAD 2>/dev/null); then
-  dirty=""
-  [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ] && dirty="*"
+  # Count modified (tracked changes, staged or not) vs untracked (?? entries).
+  modified=0; untracked=0
+  while IFS= read -r _line; do
+    [ -z "$_line" ] && continue
+    case "$_line" in
+      '??'*) untracked=$((untracked + 1)) ;;
+      *)     modified=$((modified + 1)) ;;
+    esac
+  done < <(git -C "$dir" status --porcelain 2>/dev/null)
+  marks=""
+  [ "$modified"  -gt 0 ] && marks="${marks}${yellow}*${modified}${reset}"
+  [ "$untracked" -gt 0 ] && marks="${marks}${green}+${untracked}${reset}"
   ab=""
   if counts=$(git -C "$dir" rev-list --left-right --count '@{u}...HEAD' 2>/dev/null); then
     behind=${counts%%[[:space:]]*}
@@ -106,7 +118,7 @@ if branch=$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null \
     [ "${ahead:-0}" -gt 0 ] 2>/dev/null && ab="${ab}↑${ahead}"
     [ "${behind:-0}" -gt 0 ] 2>/dev/null && ab="${ab}↓${behind}"
   fi
-  git_seg="${lblue}⎇ ${branch}${reset}${yellow}${dirty}${reset}${gray}${ab}${reset}"
+  git_seg="${lblue}⎇ ${branch}${reset}${marks}${gray}${ab}${reset}"
 fi
 
 # Helper: build a 10-segment filled/empty bar string given a filled count
@@ -157,10 +169,30 @@ fi
 usage_bar="${ubarcol}${filled_bar}${reset}${dim}${empty_bar}${reset}"
 usage_row=$(fmt_row "$usage_bar" "$hgreen" "$urate" "$usage_detail")
 
-# Header line: path · model · thinking mode, then git segment.
+# Environment segment: active Python venv and/or Node version (from .nvmrc).
+env_seg=""
+venv=""
+if [ -n "$VIRTUAL_ENV" ]; then
+  venv=$(basename "$VIRTUAL_ENV")
+elif [ -d "$dir/.venv" ]; then
+  venv=".venv"
+fi
+[ -n "$venv" ] && env_seg="${green}🐍 ${venv}${reset}"
+if [ -f "$dir/.nvmrc" ]; then
+  node_ver=$(tr -d '[:space:]' < "$dir/.nvmrc")
+  node_ver="${node_ver#v}"
+  [ -n "$node_ver" ] && env_seg="${env_seg:+$env_seg }${green}⬡ ${node_ver}${reset}"
+fi
+
+# Clock (local time, HH:MM) shown at the far right of the header.
+clock=$(date +%H:%M)
+
+# Header line: path · model · thinking mode, then git segment, env, clock.
 header="${purple}${label}${reset} ${cyan}${think_mode}${reset}"
 [ -n "$short_dir" ] && header="${gray}${short_dir}${reset} ${gray}·${reset} ${header}"
 [ -n "$git_seg" ]   && header="${header}  ${git_seg}"
+[ -n "$env_seg" ]   && header="${header}  ${env_seg}"
+header="${header}  ${dim}${clock}${reset}"
 
 if [ -z "$used" ]; then
   # No context data yet (before first message): header + usage row.
