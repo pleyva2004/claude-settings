@@ -91,6 +91,7 @@ cyan=$'\033[38;5;212m'       # pink — thinking mode widget
 orange=$'\033[38;5;208m'
 horange=$'\033[1;38;5;208m'  # bright bold orange — highlights the context number
 yellow=$'\033[38;5;220m'
+byellow=$'\033[1;38;5;226m' # bright bold yellow — clock
 red=$'\033[38;5;196m'
 dkgreen=$'\033[38;5;28m'
 green=$'\033[38;5;40m'       # green — untracked file count
@@ -221,7 +222,7 @@ fi
 cols=${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}
 pad=$(( cols - $(vis_width "$info_plain") - ${#clock} ))
 [ "$pad" -lt 1 ] && pad=1
-info_line=$(printf '%s%*s%s%s%s' "$info_line" "$pad" "" "$dim" "$clock" "$reset")
+info_line=$(printf '%s%*s%s%s%s' "$info_line" "$pad" "" "$byellow" "$clock" "$reset")
 
 # Line 2: working directory | git status.
 top_line="${gray}${short_dir:-~}${reset}"
