@@ -169,34 +169,35 @@ fi
 usage_bar="${ubarcol}${filled_bar}${reset}${dim}${empty_bar}${reset}"
 usage_row=$(fmt_row "$usage_bar" "$hgreen" "$urate" "$usage_detail")
 
-# Environment segment: active Python venv and/or Node version (from .nvmrc).
+# Environment segment: Python version (active interpreter) and/or Node version.
 env_seg=""
-venv=""
-if [ -n "$VIRTUAL_ENV" ]; then
-  venv=$(basename "$VIRTUAL_ENV")
-elif [ -d "$dir/.venv" ]; then
-  venv=".venv"
+py_bin="python3"
+[ -n "$VIRTUAL_ENV" ] && [ -x "$VIRTUAL_ENV/bin/python" ] && py_bin="$VIRTUAL_ENV/bin/python"
+if command -v "$py_bin" >/dev/null 2>&1; then
+  py_ver=$("$py_bin" --version 2>&1 | awk '{print $2}')
+  [ -n "$py_ver" ] && env_seg="${green}🐍 ${py_ver}${reset}"
 fi
-[ -n "$venv" ] && env_seg="${green}🐍 ${venv}${reset}"
 if [ -f "$dir/.nvmrc" ]; then
   node_ver=$(tr -d '[:space:]' < "$dir/.nvmrc")
   node_ver="${node_ver#v}"
   [ -n "$node_ver" ] && env_seg="${env_seg:+$env_seg }${green}⬡ ${node_ver}${reset}"
 fi
 
-# Clock (local time, HH:MM) shown at the far right of the header.
+# Clock (local time, HH:MM).
 clock=$(date +%H:%M)
 
-# Header line: path · model · thinking mode, then git segment, env, clock.
-header="${purple}${label}${reset} ${cyan}${think_mode}${reset}"
-[ -n "$short_dir" ] && header="${gray}${short_dir}${reset} ${gray}·${reset} ${header}"
-[ -n "$git_seg" ]   && header="${header}  ${git_seg}"
-[ -n "$env_seg" ]   && header="${header}  ${env_seg}"
-header="${header}  ${dim}${clock}${reset}"
+# Top line: working directory, git segment, clock.
+top_line="${gray}${short_dir:-~}${reset}"
+[ -n "$git_seg" ] && top_line="${top_line}  ${git_seg}"
+top_line="${top_line}  ${dim}${clock}${reset}"
+
+# Info line (one level lower): model, thinking mode, language versions.
+info_line="${purple}${label}${reset} ${cyan}${think_mode}${reset}"
+[ -n "$env_seg" ] && info_line="${info_line}  ${env_seg}"
 
 if [ -z "$used" ]; then
-  # No context data yet (before first message): header + usage row.
-  printf '%s\n%s' "$header" "$usage_row"
+  # No context data yet (before first message): top + info + usage row.
+  printf '%s\n%s\n%s' "$top_line" "$info_line" "$usage_row"
 else
   cpct=$(printf '%.0f' "$used")
   cfill=$(fill_count "$used")
@@ -209,5 +210,5 @@ else
   ctx_detail="$(fmt_tokens "$ctx_used")/$(fmt_tokens "$ctx_size")"
   ctx_row=$(fmt_row "$ctx_bar" "$horange" "$cpct" "$ctx_detail")
 
-  printf '%s\n%s\n%s' "$header" "$ctx_row" "$usage_row"
+  printf '%s\n%s\n%s\n%s' "$top_line" "$info_line" "$ctx_row" "$usage_row"
 fi

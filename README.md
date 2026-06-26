@@ -4,14 +4,16 @@ Portable [Claude Code](https://claude.com/claude-code) configuration to reuse ac
 
 ## `statusline-command.sh`
 
-A custom status line that renders up to three lines:
+A custom status line that renders up to four lines:
 
-1. **Header** — working directory · model name · thinking mode (pink) · git segment · environment · clock.
+1. **Top line** — working directory · git segment · clock.
    - **Git segment** (light-blue branch): `*N` modified tracked files (yellow), `+N` untracked files (green), and `↑N`/`↓N` ahead/behind the upstream.
-   - **Environment**: active Python venv (`🐍 name`, from `$VIRTUAL_ENV` or a local `.venv/`) and Node version (`⬡ 18.17.0`, from a local `.nvmrc`).
-   - **Clock**: local time (`HH:MM`) at the far right.
-2. **Context bar** (orange) — percent of the context window used, plus actual tokens used / window size (e.g. `53k/1M`).
-3. **Daily budget bar** (green → yellow → orange → red) — spend against a configurable daily budget. Because Claude Code only reports per-session cost, the script persists each session's cost to `~/.claude/daily-usage.json` keyed by date and sums across all of today's sessions.
+   - **Clock**: local time (`HH:MM`).
+2. **Info line** — model name (purple) · thinking mode / effort level (pink) · language versions.
+   - **Python** (`🐍 3.11.5`) — the active interpreter's version (`$VIRTUAL_ENV/bin/python` if a venv is active, else `python3`).
+   - **Node** (`⬡ 18.17.0`) — from a local `.nvmrc`.
+3. **Context bar** (orange) — percent of the context window used, plus actual tokens used / window size (e.g. `53k/1M`).
+4. **Daily budget bar** (green → yellow → orange → red) — spend against a configurable daily budget. Because Claude Code only reports per-session cost, the script persists each session's cost to `~/.claude/daily-usage.json` keyed by date and sums across all of today's sessions.
 
 Tunables at the top of the script: `DAILY_BUDGET` (default `300`) and the 256-color constants.
 
