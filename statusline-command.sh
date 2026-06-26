@@ -171,57 +171,30 @@ usage_bar="${ubarcol}${filled_bar}${reset}${dim}${empty_bar}${reset}"
 usage_row=$(fmt_row "$usage_bar" "$hgreen" "$urate" "$usage_detail")
 
 # Environment segment: Python version (active interpreter) and/or Node version.
-# Build both a colored version (env_seg) and a plain version (env_plain) so we
-# can measure display width for right-alignment.
 env_seg=""
-env_plain=""
 py_bin="python3"
 [ -n "$VIRTUAL_ENV" ] && [ -x "$VIRTUAL_ENV/bin/python" ] && py_bin="$VIRTUAL_ENV/bin/python"
 if command -v "$py_bin" >/dev/null 2>&1; then
   py_ver=$("$py_bin" --version 2>&1 | awk '{print $2}')
-  if [ -n "$py_ver" ]; then env_seg="${green}🐍 ${py_ver}${reset}"; env_plain="🐍 ${py_ver}"; fi
+  [ -n "$py_ver" ] && env_seg="${green}🐍 ${py_ver}${reset}"
 fi
 if [ -f "$dir/.nvmrc" ]; then
   node_ver=$(tr -d '[:space:]' < "$dir/.nvmrc")
   node_ver="${node_ver#v}"
-  if [ -n "$node_ver" ]; then
-    env_seg="${env_seg:+$env_seg }${green}⬡ ${node_ver}${reset}"
-    env_plain="${env_plain:+$env_plain }⬡ ${node_ver}"
-  fi
+  [ -n "$node_ver" ] && env_seg="${env_seg:+$env_seg }${green}⬡ ${node_ver}${reset}"
 fi
-
-# Helper: display width of a string, accounting for wide emoji (e.g. 🐍 = 2 cols).
-vis_width() {
-  printf '%s' "$1" | python3 -c '
-import sys, unicodedata
-w = 0
-for ch in sys.stdin.read():
-    o = ord(ch)
-    if 0x1F000 <= o <= 0x1FAFF or unicodedata.east_asian_width(ch) in ("W", "F"):
-        w += 2
-    else:
-        w += 1
-print(w)
-'
-}
 
 # Clock (local time, HH:MM).
 clock=$(date +%H:%M)
 
 sep="${dim}│${reset}"
 
-# Line 1: model name · effort level | language versions, clock right-aligned.
+# Line 1: model name · effort level | language versions · clock (inline at end).
 info_line="${purple}${label}${reset} ${cyan}${think_mode}${reset}"
-info_plain="${label} ${think_mode}"
 if [ -n "$env_seg" ]; then
   info_line="${info_line}  ${sep}  ${env_seg}"
-  info_plain="${info_plain}  │  ${env_plain}"
 fi
-# Pad with spaces so the clock sits flush against the right screen edge.
-cols=${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}
-pad=$(( cols - $(vis_width "$info_plain") - ${#clock} ))
-[ "$pad" -lt 1 ] && pad=1
-info_line=$(printf '%s%*s%s%s%s' "$info_line" "$pad" "" "$gray" "$clock" "$reset")
+info_line="${info_line}  ${sep}  ${gray}${clock}${reset}"
 
 # Line 2: working directory | git status.
 top_line="${gray}${short_dir:-~}${reset}"
