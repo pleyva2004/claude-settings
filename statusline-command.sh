@@ -170,19 +170,51 @@ fi
 usage_bar="${ubarcol}${filled_bar}${reset}${dim}${empty_bar}${reset}"
 usage_row=$(fmt_row "$usage_bar" "$hgreen" "$urate" "$usage_detail")
 
-# Environment segment: Python version (active interpreter) and/or Node version.
+# Environment segment: detect the project's language(s) from marker files /
+# source extensions in the working dir, then show each toolchain's version.
+# Each detector is "icon|version-command|space-separated marker globs". A
+# language is shown only when one of its markers is present in $dir; the version
+# is appended when its toolchain is installed (else just the icon is shown).
 env_seg=""
-py_bin="python3"
-[ -n "$VIRTUAL_ENV" ] && [ -x "$VIRTUAL_ENV/bin/python" ] && py_bin="$VIRTUAL_ENV/bin/python"
-if command -v "$py_bin" >/dev/null 2>&1; then
-  py_ver=$("$py_bin" --version 2>&1 | awk '{print $2}')
-  [ -n "$py_ver" ] && env_seg="${green}🐍 ${py_ver}${reset}"
-fi
-if [ -f "$dir/.nvmrc" ]; then
-  node_ver=$(tr -d '[:space:]' < "$dir/.nvmrc")
-  node_ver="${node_ver#v}"
-  [ -n "$node_ver" ] && env_seg="${env_seg:+$env_seg }${green}⬡ ${node_ver}${reset}"
-fi
+LANG_DETECTORS=(
+  "🐍|python3 --version|*.py pyproject.toml requirements.txt setup.py Pipfile .python-version"
+  "⬡|node --version|package.json .nvmrc *.js *.mjs *.cjs *.ts *.tsx tsconfig.json"
+  "🦀|rustc --version|Cargo.toml *.rs"
+  "🐹|go version|go.mod *.go"
+  "💎|ruby --version|Gemfile *.rb .ruby-version"
+  "☕|java -version|pom.xml build.gradle build.gradle.kts *.java"
+  "🟣|kotlinc -version|*.kt *.kts"
+  "🐘|php --version|composer.json *.php"
+  "🔷|dotnet --version|*.csproj *.fsproj *.sln *.cs"
+  "🕊|swift --version|Package.swift *.swift"
+  "🔧|cc --version|*.c *.cpp *.cc *.cxx *.h *.hpp CMakeLists.txt"
+  "💧|elixir --version|mix.exs *.ex *.exs"
+  "λ|ghc --version|*.hs stack.yaml *.cabal"
+  "🔺|scala -version|build.sbt *.scala"
+  "🎯|dart --version|pubspec.yaml *.dart"
+  "🐪|perl -e 'print \"\$^V\"'|*.pl *.pm"
+  "⚡|zig version|build.zig *.zig"
+  "🌙|lua -v|*.lua"
+  "📊|R --version|*.R *.r DESCRIPTION"
+  "⬢|julia --version|Project.toml *.jl"
+)
+lang_count=0
+for _entry in "${LANG_DETECTORS[@]}"; do
+  IFS='|' read -r _icon _vcmd _markers <<< "$_entry"
+  _found=0
+  for _pat in $_markers; do
+    compgen -G "$dir/$_pat" >/dev/null 2>&1 && { _found=1; break; }
+  done
+  [ "$_found" -eq 1 ] || continue
+  _ver=""
+  _bin="${_vcmd%% *}"
+  if command -v "$_bin" >/dev/null 2>&1; then
+    _ver=$(eval "$_vcmd" 2>&1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+  fi
+  env_seg="${env_seg:+$env_seg  }${green}${_icon}${_ver:+ $_ver}${reset}"
+  lang_count=$((lang_count + 1))
+  [ "$lang_count" -ge 4 ] && break
+done
 
 # Clock (local time, HH:MM).
 clock=$(date +%H:%M)

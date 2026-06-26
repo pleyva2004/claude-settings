@@ -4,16 +4,51 @@ Portable [Claude Code](https://claude.com/claude-code) configuration to reuse ac
 
 ## `statusline-command.sh`
 
-A custom status line that renders up to four lines:
+A custom status line that renders up to four lines. Here's an annotated mock-up:
 
-1. **Model line** — model name (purple) · thinking mode / effort level (pink) · language versions, with the **clock** (`HH:MM`) right-aligned to the screen edge.
-   - **Python** (`🐍 3.11.5`) — the active interpreter's version (`$VIRTUAL_ENV/bin/python` if a venv is active, else `python3`).
-   - **Node** (`⬡ 18.17.0`) — from a local `.nvmrc`.
-   - The clock is right-aligned using `$COLUMNS` (falling back to `tput cols`); a small Python helper measures display width so wide emoji don't throw off alignment.
-2. **Context line** — working directory · git segment.
-   - **Git segment** (light-blue branch): `*N` modified tracked files (yellow), `+N` untracked files (green), and `↑N`/`↓N` ahead/behind the upstream.
-3. **Context bar** (orange) — percent of the context window used, plus actual tokens used / window size (e.g. `53k/1M`).
-4. **Daily budget bar** (green → yellow → orange → red) — spend against a configurable daily budget. Because Claude Code only reports per-session cost, the script persists each session's cost to `~/.claude/daily-usage.json` keyed by date and sums across all of today's sessions.
+```
+Opus 4.8 high  │  🐍 3.11.5  ⬡ 18.17.0  │  22:55      ← line 1: model · effort | languages | clock
+~/Code/Home/claude-settings  │  ⎇ main*3+2 ↑1         ← line 2: working dir | git status
+██████░░░░  58%   580k/1M                             ← line 3: context window usage
+███░░░░░░░  31%   $93/$300                            ← line 4: daily budget usage
+```
+
+Claude Code pipes a JSON payload to the script on stdin on every render; each field below names where the value comes from.
+
+### Line 1 — model · effort level | languages | clock
+
+| Element | Example | Represents | How it's retrieved / calculated |
+|---|---|---|---|
+| Model | `Opus 4.8` | Active model | `.model.display_name`, with the `Claude ` prefix and any ` (… )` suffix stripped. |
+| Effort | `high` (pink) | Thinking mode | `low`/`medium`/`high` from `.effort.level` when `.thinking.enabled` is true, else `off`. |
+| Languages | `🐍 3.11.5  ⬡ 18.17.0` (green) | Project languages | The script scans the working dir for marker files / source extensions (e.g. `Cargo.toml`, `*.go`, `package.json`, `*.py`) and, for each language found, runs its toolchain (`python3 --version`, `node --version`, `rustc --version`, `go version`, …) and extracts the version with a `[0-9]+\.[0-9]+…` regex. ~20 languages supported; shows up to 4. If the toolchain isn't installed, just the icon is shown. |
+| Clock | `22:55` | Local time | `date +%H:%M`. |
+
+### Line 2 — working directory | git status
+
+| Element | Example | Represents | How it's retrieved / calculated |
+|---|---|---|---|
+| Directory | `~/Code/Home/claude-settings` | Working dir | `.workspace.current_dir` (falls back to `.cwd`), shortened to its last 3 path components. |
+| Branch | `⎇ main` (light blue) | Git branch | `git symbolic-ref --short HEAD` (falls back to a short SHA when detached). Whole segment is empty outside a repo. |
+| `*N` | `*3` (yellow) | Modified tracked files | Count of `git status --porcelain` lines **not** starting with `??`. |
+| `+N` | `+2` (green) | Untracked files | Count of `git status --porcelain` lines starting with `??`. |
+| `↑N` / `↓N` | `↑1` | Ahead / behind upstream | `git rev-list --left-right --count @{u}...HEAD`. |
+
+### Line 3 — context window bar (orange)
+
+| Element | Example | Represents | How it's retrieved / calculated |
+|---|---|---|---|
+| Bar + `%` | `██████░░░░ 58%` | Context window used | `.context_window.used_percentage` (or `100 − remaining_percentage`), rounded to a 0–10 segment bar. |
+| Detail | `580k/1M` | Tokens used / window size | `(.total_input_tokens + .total_output_tokens)` over `.context_window_size`, formatted compactly (`580k`, `1M`). |
+
+### Line 4 — daily budget bar (green → yellow → orange → red)
+
+| Element | Example | Represents | How it's retrieved / calculated |
+|---|---|---|---|
+| Bar + `%` | `███░░░░░░░ 31%` | Spend vs daily budget | Daily total ÷ `DAILY_BUDGET` (default `300`). Color escalates: green → yellow (≥50%) → orange (≥80%) → red (≥100%). |
+| Detail | `$93/$300` | Today's spend / budget | The payload only reports **per-session** cost (`.cost.total_cost_usd`, which resets each session), so the script persists each session's cost to `~/.claude/daily-usage.json` keyed by date, then **sums all of today's sessions** to get the true daily total. Written atomically (temp file + `mv`) so concurrent renders can't corrupt the state. |
+
+Lines 3 and 4 share a fixed-width (10-char) bar and right-padded percentage so their detail columns line up. Line 3 is omitted before the first message (no context data yet).
 
 Tunables at the top of the script: `DAILY_BUDGET` (default `300`) and the 256-color constants.
 
