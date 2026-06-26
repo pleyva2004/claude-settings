@@ -216,17 +216,11 @@ for _entry in "${LANG_DETECTORS[@]}"; do
   [ "$lang_count" -ge 4 ] && break
 done
 
-# Clock (local time, HH:MM).
-clock=$(date +%H:%M)
-
 sep="${dim}│${reset}"
 
-# Line 1: model name · effort level | language versions · clock (inline at end).
+# Line 1: model name · effort level | language versions.
 info_line="${purple}${label}${reset} ${cyan}${think_mode}${reset}"
-if [ -n "$env_seg" ]; then
-  info_line="${info_line}  ${sep}  ${env_seg}"
-fi
-info_line="${info_line}  ${sep}  ${gray}${clock}${reset}"
+[ -n "$env_seg" ] && info_line="${info_line}  ${sep}  ${env_seg}"
 
 # Line 2: working directory | git status.
 top_line="${gray}${short_dir:-~}${reset}"
