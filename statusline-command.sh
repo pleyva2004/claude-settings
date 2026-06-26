@@ -2,6 +2,7 @@
 # Claude Code status line: model name + context bar (orange) + usage bar (dark green)
 input=$(cat)
 
+printf '%s' "$input" > /tmp/statusline-debug.json
 
 model=$(echo "$input" | jq -r '.model.display_name // empty')
 # Strip leading "Claude " prefix for brevity (e.g. "Claude Opus 4" -> "Opus 4")
@@ -170,32 +171,61 @@ usage_bar="${ubarcol}${filled_bar}${reset}${dim}${empty_bar}${reset}"
 usage_row=$(fmt_row "$usage_bar" "$hgreen" "$urate" "$usage_detail")
 
 # Environment segment: Python version (active interpreter) and/or Node version.
+# Build both a colored version (env_seg) and a plain version (env_plain) so we
+# can measure display width for right-alignment.
 env_seg=""
+env_plain=""
 py_bin="python3"
 [ -n "$VIRTUAL_ENV" ] && [ -x "$VIRTUAL_ENV/bin/python" ] && py_bin="$VIRTUAL_ENV/bin/python"
 if command -v "$py_bin" >/dev/null 2>&1; then
   py_ver=$("$py_bin" --version 2>&1 | awk '{print $2}')
-  [ -n "$py_ver" ] && env_seg="${green}🐍 ${py_ver}${reset}"
+  if [ -n "$py_ver" ]; then env_seg="${green}🐍 ${py_ver}${reset}"; env_plain="🐍 ${py_ver}"; fi
 fi
 if [ -f "$dir/.nvmrc" ]; then
   node_ver=$(tr -d '[:space:]' < "$dir/.nvmrc")
   node_ver="${node_ver#v}"
-  [ -n "$node_ver" ] && env_seg="${env_seg:+$env_seg }${green}⬡ ${node_ver}${reset}"
+  if [ -n "$node_ver" ]; then
+    env_seg="${env_seg:+$env_seg }${green}⬡ ${node_ver}${reset}"
+    env_plain="${env_plain:+$env_plain }⬡ ${node_ver}"
+  fi
 fi
+
+# Helper: display width of a string, accounting for wide emoji (e.g. 🐍 = 2 cols).
+vis_width() {
+  printf '%s' "$1" | python3 -c '
+import sys, unicodedata
+w = 0
+for ch in sys.stdin.read():
+    o = ord(ch)
+    if 0x1F000 <= o <= 0x1FAFF or unicodedata.east_asian_width(ch) in ("W", "F"):
+        w += 2
+    else:
+        w += 1
+print(w)
+'
+}
 
 # Clock (local time, HH:MM).
 clock=$(date +%H:%M)
 
 sep="${dim}│${reset}"
 
-# Line 1: model name · effort level | language versions.
+# Line 1: model name · effort level | language versions, clock right-aligned.
 info_line="${purple}${label}${reset} ${cyan}${think_mode}${reset}"
-[ -n "$env_seg" ] && info_line="${info_line}  ${sep}  ${env_seg}"
+info_plain="${label} ${think_mode}"
+if [ -n "$env_seg" ]; then
+  info_line="${info_line}  ${sep}  ${env_seg}"
+  info_plain="${info_plain}  │  ${env_plain}"
+fi
+# Pad with spaces so the clock sits flush against the right screen edge.
+cols=${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}
+pad=$(( cols - $(vis_width "$info_plain") - ${#clock} ))
+[ "$pad" -lt 1 ] && pad=1
+info_line=$(printf '%s%*s%s%s%s' "$info_line" "$pad" "" "$dim" "$clock" "$reset")
 
-# Line 2: working directory | git status, then clock.
+# Line 2: working directory | git status.
 top_line="${gray}${short_dir:-~}${reset}"
 [ -n "$git_seg" ] && top_line="${top_line}  ${sep}  ${git_seg}"
-top_line="${top_line}  ${dim}${clock}${reset}"
 
 if [ -z "$used" ]; then
   # No context data yet (before first message): info + top + usage row.

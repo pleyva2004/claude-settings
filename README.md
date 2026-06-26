@@ -6,12 +6,12 @@ Portable [Claude Code](https://claude.com/claude-code) configuration to reuse ac
 
 A custom status line that renders up to four lines:
 
-1. **Model line** — model name (purple) · thinking mode / effort level (pink) · language versions.
+1. **Model line** — model name (purple) · thinking mode / effort level (pink) · language versions, with the **clock** (`HH:MM`) right-aligned to the screen edge.
    - **Python** (`🐍 3.11.5`) — the active interpreter's version (`$VIRTUAL_ENV/bin/python` if a venv is active, else `python3`).
    - **Node** (`⬡ 18.17.0`) — from a local `.nvmrc`.
-2. **Context line** — working directory · git segment · clock.
+   - The clock is right-aligned using `$COLUMNS` (falling back to `tput cols`); a small Python helper measures display width so wide emoji don't throw off alignment.
+2. **Context line** — working directory · git segment.
    - **Git segment** (light-blue branch): `*N` modified tracked files (yellow), `+N` untracked files (green), and `↑N`/`↓N` ahead/behind the upstream.
-   - **Clock**: local time (`HH:MM`).
 3. **Context bar** (orange) — percent of the context window used, plus actual tokens used / window size (e.g. `53k/1M`).
 4. **Daily budget bar** (green → yellow → orange → red) — spend against a configurable daily budget. Because Claude Code only reports per-session cost, the script persists each session's cost to `~/.claude/daily-usage.json` keyed by date and sums across all of today's sessions.
 
