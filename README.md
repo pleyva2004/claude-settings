@@ -24,6 +24,35 @@ Claude Code pipes a JSON payload to the script on stdin on every render; each fi
 | Languages | `🐍 3.11.5  ⬡ 18.17.0` (green) | Project languages | The script scans the working dir for marker files / source extensions (e.g. `Cargo.toml`, `*.go`, `package.json`, `*.py`) and, for each language found, runs its toolchain (`python3 --version`, `node --version`, `rustc --version`, `go version`, …) and extracts the version with a `[0-9]+\.[0-9]+…` regex. ~20 languages supported; shows up to 4. If the toolchain isn't installed, just the icon is shown. |
 | Clock | `22:55` | Local time | `date +%H:%M`. |
 
+#### Language coverage
+
+The language identifier recognizes the following (a language appears only when one of its markers is present in the working dir; the version is shown when its toolchain is installed, otherwise just the icon):
+
+| Lang | Icon | Detected by (marker files / extensions) | Version command |
+|---|---|---|---|
+| Python | 🐍 | `*.py`, `pyproject.toml`, `requirements.txt`, `setup.py`, `Pipfile`, `.python-version` | `python3 --version` |
+| JS / TS / Node | ⬡ | `package.json`, `.nvmrc`, `*.js`, `*.mjs`, `*.cjs`, `*.ts`, `*.tsx`, `tsconfig.json` | `node --version` |
+| Rust | 🦀 | `Cargo.toml`, `*.rs` | `rustc --version` |
+| Go | 🐹 | `go.mod`, `*.go` | `go version` |
+| Ruby | 💎 | `Gemfile`, `*.rb`, `.ruby-version` | `ruby --version` |
+| Java | ☕ | `pom.xml`, `build.gradle`, `build.gradle.kts`, `*.java` | `java -version` |
+| Kotlin | 🟣 | `*.kt`, `*.kts` | `kotlinc -version` |
+| PHP | 🐘 | `composer.json`, `*.php` | `php --version` |
+| C# / .NET | 🔷 | `*.csproj`, `*.fsproj`, `*.sln`, `*.cs` | `dotnet --version` |
+| Swift | 🕊 | `Package.swift`, `*.swift` | `swift --version` |
+| C / C++ | 🔧 | `*.c`, `*.cpp`, `*.cc`, `*.cxx`, `*.h`, `*.hpp`, `CMakeLists.txt` | `cc --version` |
+| Elixir | 💧 | `mix.exs`, `*.ex`, `*.exs` | `elixir --version` |
+| Haskell | λ | `*.hs`, `stack.yaml`, `*.cabal` | `ghc --version` |
+| Scala | 🔺 | `build.sbt`, `*.scala` | `scala -version` |
+| Dart | 🎯 | `pubspec.yaml`, `*.dart` | `dart --version` |
+| Perl | 🐪 | `*.pl`, `*.pm` | `perl -e 'print $^V'` |
+| Zig | ⚡ | `build.zig`, `*.zig` | `zig version` |
+| Lua | 🌙 | `*.lua` | `lua -v` |
+| R | 📊 | `*.R`, `*.r`, `DESCRIPTION` | `R --version` |
+| Julia | ⬢ | `Project.toml`, `*.jl` | `julia --version` |
+
+Add a language by appending one `"icon|version-command|marker globs"` row to the `LANG_DETECTORS` array near the top of the script.
+
 ### Line 2 — working directory | git status
 
 | Element | Example | Represents | How it's retrieved / calculated |
