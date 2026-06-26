@@ -186,18 +186,20 @@ fi
 # Clock (local time, HH:MM).
 clock=$(date +%H:%M)
 
-# Top line: working directory, git segment, clock.
+sep="${dim}│${reset}"
+
+# Line 1: model name · effort level | language versions.
+info_line="${purple}${label}${reset} ${cyan}${think_mode}${reset}"
+[ -n "$env_seg" ] && info_line="${info_line}  ${sep}  ${env_seg}"
+
+# Line 2: working directory | git status, then clock.
 top_line="${gray}${short_dir:-~}${reset}"
-[ -n "$git_seg" ] && top_line="${top_line}  ${git_seg}"
+[ -n "$git_seg" ] && top_line="${top_line}  ${sep}  ${git_seg}"
 top_line="${top_line}  ${dim}${clock}${reset}"
 
-# Info line (one level lower): model, thinking mode, language versions.
-info_line="${purple}${label}${reset} ${cyan}${think_mode}${reset}"
-[ -n "$env_seg" ] && info_line="${info_line}  ${env_seg}"
-
 if [ -z "$used" ]; then
-  # No context data yet (before first message): top + info + usage row.
-  printf '%s\n%s\n%s' "$top_line" "$info_line" "$usage_row"
+  # No context data yet (before first message): info + top + usage row.
+  printf '%s\n%s\n%s' "$info_line" "$top_line" "$usage_row"
 else
   cpct=$(printf '%.0f' "$used")
   cfill=$(fill_count "$used")
@@ -210,5 +212,5 @@ else
   ctx_detail="$(fmt_tokens "$ctx_used")/$(fmt_tokens "$ctx_size")"
   ctx_row=$(fmt_row "$ctx_bar" "$horange" "$cpct" "$ctx_detail")
 
-  printf '%s\n%s\n%s\n%s' "$top_line" "$info_line" "$ctx_row" "$usage_row"
+  printf '%s\n%s\n%s\n%s' "$info_line" "$top_line" "$ctx_row" "$usage_row"
 fi
