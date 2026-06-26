@@ -14,16 +14,38 @@ Tunables at the top of the script: `DAILY_BUDGET` (default `300`) and the 256-co
 
 ### Install
 
-```sh
-# 1. copy the script into your Claude config dir
-cp statusline-command.sh ~/.claude/statusline-command.sh
-chmod +x ~/.claude/statusline-command.sh
+Requires `jq`, `awk`, and `git` on your `PATH`.
 
-# 2. point Claude Code at it in ~/.claude/settings.json
-#    "statusLine": {
-#      "type": "command",
-#      "command": "bash /Users/<you>/.claude/statusline-command.sh"
-#    }
+**Step 1 — Clone this repo**
+
+```sh
+git clone https://github.com/pleyva2004/claude-settings.git
+cd claude-settings
 ```
 
-Requires `jq`, `awk`, and `git` on `PATH`.
+**Step 2 — Copy the script into your Claude config directory**
+
+```sh
+cp statusline-command.sh ~/.claude/statusline-command.sh
+chmod +x ~/.claude/statusline-command.sh
+```
+
+**Step 3 — Point Claude Code at the script**
+
+Add this block to `~/.claude/settings.json` (replace `<you>` with your username):
+
+```json
+"statusLine": {
+  "type": "command",
+  "command": "bash /Users/<you>/.claude/statusline-command.sh"
+}
+```
+
+**Step 4 — (Optional) Tune it**
+
+Edit the top of `~/.claude/statusline-command.sh` to change `DAILY_BUDGET` (default `300`) or the 256-color constants.
+
+**Step 5 — Reload**
+
+Restart Claude Code (or start a new session). The status line appears at the bottom of the prompt.
+
