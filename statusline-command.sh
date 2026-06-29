@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Claude Code status line: model name + context bar (orange) + usage bar (dark green)
+# Claude Code status line: model picker + context bar + daily budget bar.
 input=$(cat)
-
-printf '%s' "$input" > /tmp/statusline-debug.json
 
 model=$(echo "$input" | jq -r '.model.display_name // empty')
 # Strip leading "Claude " prefix for brevity (e.g. "Claude Opus 4" -> "Opus 4")
@@ -70,7 +68,7 @@ usage_detail=$(awk "BEGIN { printf \"\$%.0f/\$%d\", $daily_total, $DAILY_BUDGET 
 label="${model:-Claude}"
 
 # Current working directory, shortened to its last 3 path components
-# (e.g. /Users/pabloleyva/work/proj -> pabloleyva/work/proj).
+# (e.g. /Users/you/work/proj -> you/work/proj).
 dir=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
 dir="${dir%/}"
 IFS='/' read -ra _parts <<< "$dir"
@@ -87,9 +85,14 @@ dim=$'\033[2m'
 gray=$'\033[38;5;245m'      # muted gray — directory path
 lblue=$'\033[38;5;117m'     # light blue — git branch name
 purple=$'\033[38;5;141m'
+dpurple=$'\033[38;5;60m'     # darker/muted purple — unselected models
+pillbg=$'\033[48;5;97m'      # darker purple pill background — selected model
+pillfg=$'\033[1;38;5;231m'   # white bold — selected model text
+pillcap=$'\033[38;5;97m'     # pill end-cap glyph color (matches the background)
 cyan=$'\033[38;5;212m'       # pink — thinking mode widget
 orange=$'\033[38;5;208m'
 horange=$'\033[1;38;5;208m'  # bright bold orange — highlights the context number
+dorange=$'\033[38;5;166m'    # darker orange — context bar (distinct from the $ usage bar)
 yellow=$'\033[38;5;220m'
 red=$'\033[38;5;196m'
 dkgreen=$'\033[38;5;28m'
@@ -110,8 +113,8 @@ if branch=$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null \
     esac
   done < <(git -C "$dir" status --porcelain 2>/dev/null)
   marks=""
-  [ "$modified"  -gt 0 ] && marks="${marks}${yellow}*${modified}${reset}"
-  [ "$untracked" -gt 0 ] && marks="${marks}${green}+${untracked}${reset}"
+  [ "$modified"  -gt 0 ] && marks="${marks} ${yellow}*${modified}${reset}"
+  [ "$untracked" -gt 0 ] && marks="${marks} ${green}+${untracked}${reset}"
   ab=""
   if counts=$(git -C "$dir" rev-list --left-right --count '@{u}...HEAD' 2>/dev/null); then
     behind=${counts%%[[:space:]]*}
@@ -119,7 +122,8 @@ if branch=$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null \
     [ "${ahead:-0}" -gt 0 ] 2>/dev/null && ab="${ab}↑${ahead}"
     [ "${behind:-0}" -gt 0 ] 2>/dev/null && ab="${ab}↓${behind}"
   fi
-  git_seg="${lblue}⎇ ${branch}${reset}${marks}${gray}${ab}${reset}"
+  [ -n "$ab" ] && ab=" ${gray}${ab}${reset}"
+  git_seg="${lblue}⎇ ${branch}${reset}${marks}${ab}"
 fi
 
 # Helper: build a 10-segment filled/empty bar string given a filled count
@@ -154,11 +158,8 @@ fill_count() { awk "BEGIN { f = int($1/10 + 0.5); if (f>10) f=10; if (f<0) f=0; 
 fmt_row() { printf '%s %s%3d%%%s   %s%s%s' "$1" "$2" "$3" "$reset" "$dim" "$4" "$reset"; }
 
 # --- Assemble the status bar -----------------------------------------------
-# Model on its own line, then one aligned row per bar. Both bars start at
-# column 0 (no leading whitespace) so alignment survives however the status
-# line UI handles indentation.
 
-# Usage (budget) bar — always present.
+# Usage (daily budget) bar — always present.
 urate=$(printf '%.0f' "${rate_used:-0}")
 ufill=$(fill_count "${rate_used:-0}")
 build_bar "$ufill" "$(( 10 - ufill ))"
@@ -218,28 +219,56 @@ done
 
 sep="${dim}│${reset}"
 
-# Line 1: model name · effort level | language versions.
-info_line="${purple}${label}${reset} ${cyan}${think_mode}${reset}"
+# Model picker: show every switchable model. The active one (matched against the
+# current model name) gets a purple rounded "pill" with white text; the rest are
+# a muted purple. Edit MODELS to change the list. The rounded caps need a Nerd
+# Font; without one they show as boxes (swap pill_l/pill_r for "(" / ")").
+MODELS=("Opus 4.8" "Sonnet 4.6" "Haiku 4.5")
+pill_l=$''   #  left half-circle
+pill_r=$''   #  right half-circle
+models_seg=""
+matched=0
+for _m in "${MODELS[@]}"; do
+  if [ "$_m" = "$label" ]; then
+    # Active model: pill + effort level right beside it.
+    chip="${pillcap}${pill_l}${reset}${pillbg}${pillfg}${_m}${reset}${pillcap}${pill_r}${reset} ${cyan}${think_mode}${reset}"
+    matched=1
+  else
+    chip="${dpurple}${_m}${reset}"
+  fi
+  models_seg="${models_seg:+$models_seg }${chip}"
+done
+# If the active model isn't in the list, prepend it as a pill so it still shows.
+if [ "$matched" = "0" ] && [ -n "$label" ]; then
+  chip="${pillcap}${pill_l}${reset}${pillbg}${pillfg}${label}${reset}${pillcap}${pill_r}${reset} ${cyan}${think_mode}${reset}"
+  models_seg="${chip} ${models_seg}"
+fi
+
+# Line 1: model picker (active pill carries the effort level) | language versions.
+info_line="${models_seg}"
 [ -n "$env_seg" ] && info_line="${info_line}  ${sep}  ${env_seg}"
 
 # Line 2: working directory | git status.
 top_line="${gray}${short_dir:-~}${reset}"
 [ -n "$git_seg" ] && top_line="${top_line}  ${sep}  ${git_seg}"
 
-if [ -z "$used" ]; then
-  # No context data yet (before first message): info + top + usage row.
-  printf '%s\n%s\n%s' "$info_line" "$top_line" "$usage_row"
-else
+# Build the context-window row only when context data is available.
+ctx_row=""
+if [ -n "$used" ]; then
   cpct=$(printf '%.0f' "$used")
   cfill=$(fill_count "$used")
   build_bar "$cfill" "$(( 10 - cfill ))"
-  ctx_bar="${orange}${filled_bar}${reset}${dim}${empty_bar}${reset}"
+  ctx_bar="${dorange}${filled_bar}${reset}${dim}${empty_bar}${reset}"
 
   # Actual token amount in use vs the context window size, e.g. "53k/1M".
   ctx_used=$(echo "$input" | jq -r '(.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)')
   ctx_size=$(echo "$input" | jq -r '.context_window.context_window_size // 0')
   ctx_detail="$(fmt_tokens "$ctx_used")/$(fmt_tokens "$ctx_size")"
-  ctx_row=$(fmt_row "$ctx_bar" "$horange" "$cpct" "$ctx_detail")
-
-  printf '%s\n%s\n%s\n%s' "$info_line" "$top_line" "$ctx_row" "$usage_row"
+  ctx_row=$(fmt_row "$ctx_bar" "$dorange" "$cpct" "$ctx_detail")
 fi
+
+# Assemble: header lines, optional context row, daily budget row.
+out="${info_line}"$'\n'"${top_line}"
+[ -n "$ctx_row" ] && out="${out}"$'\n'"${ctx_row}"
+out="${out}"$'\n'"${usage_row}"
+printf '%s' "$out"

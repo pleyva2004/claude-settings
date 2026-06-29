@@ -7,20 +7,20 @@ Portable [Claude Code](https://claude.com/claude-code) configuration to reuse ac
 A custom status line that renders up to four lines. Here's an annotated mock-up:
 
 ```
-Opus 4.8 high  │  🐍 3.11.5  ⬡ 18.17.0               ← line 1: model · effort | languages
-~/Code/Home/claude-settings  │  ⎇ main*3+2 ↑1         ← line 2: working dir | git status
-██████░░░░  58%   580k/1M                             ← line 3: context window usage
-███░░░░░░░  31%   $93/$300                             ← line 4: daily budget usage
+( Opus 4.8 ) high  Sonnet 4.6  Haiku 4.5  │  🐍 3.11.5  ⬡ 18.17.0   ← line 1: model picker + effort | languages
+~/Code/Home/claude-settings  │  ⎇ main *3 +2 ↑1                      ← line 2: working dir | git status
+██████░░░░  58%   580k/1M                                            ← line 3: context window usage
+███░░░░░░░  31%   $93/$300                                           ← line 4: daily budget usage
 ```
 
 Claude Code pipes a JSON payload to the script on stdin on every render; each field below names where the value comes from.
 
-### Line 1 — model · effort level | languages
+### Line 1 — model picker + effort level | languages
 
 | Element | Example | Represents | How it's retrieved / calculated |
 |---|---|---|---|
-| Model | `Opus 4.8` | Active model | `.model.display_name`, with the `Claude ` prefix and any ` (… )` suffix stripped. |
-| Effort | `high` (pink) | Thinking mode | `low`/`medium`/`high` from `.effort.level` when `.thinking.enabled` is true, else `off`. |
+| Model picker | `( Opus 4.8 ) Sonnet 4.6 Haiku 4.5` | Switchable models | The `MODELS` list is shown in full; the **active** model (matched against `.model.display_name`, prefix/suffix stripped) gets a purple rounded "pill" with white text, the rest are muted purple. The rounded caps (``/``) need a Nerd Font. |
+| Effort | `high` (pink) | Thinking mode | `low`/`medium`/`high` from `.effort.level` when `.thinking.enabled` is true, else `off`. Rendered right beside the active model pill. |
 | Languages | `🐍 3.11.5  ⬡ 18.17.0` (green) | Project languages | The script scans the working dir for marker files / source extensions (e.g. `Cargo.toml`, `*.go`, `package.json`, `*.py`) and, for each language found, runs its toolchain (`python3 --version`, `node --version`, `rustc --version`, `go version`, …) and extracts the version with a `[0-9]+\.[0-9]+…` regex. ~20 languages supported; shows up to 4. If the toolchain isn't installed, just the icon is shown. |
 
 #### Language coverage
