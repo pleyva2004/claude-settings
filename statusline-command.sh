@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code status line: model picker + context bar + daily budget bar.
+# Claude Code status line: model picker + context bar + session (5h) & weekly (7d) limit bars
 input=$(cat)
 
 model=$(echo "$input" | jq -r '.model.display_name // empty')
@@ -28,42 +28,51 @@ if [ -z "$used" ]; then
   fi
 fi
 
-# --- Daily budget tracking -------------------------------------------------
-# The status-line payload only reports cost.total_cost_usd for the CURRENT
-# session, and it resets to 0 each new session. To track a DAILY total across
-# every session, persist each session's cumulative cost to a state file keyed
-# by date, then sum across sessions on each render.
-DAILY_BUDGET=300
-state="$HOME/.claude/daily-usage.json"
-today=$(date +%Y-%m-%d)
+# --- Rate-limit windows ----------------------------------------------------
+# Mirror the /usage view. Claude Code reports two rolling usage windows in the
+# payload: rate_limits.five_hour ("Current session") and rate_limits.seven_day
+# ("Current week"). Each carries a used_percentage (0-100) and resets_at (a Unix
+# epoch); no external state needed — the platform tracks it. Each drives its own
+# bar plus a detail showing the label, time-until-reset, and local reset clock,
+# e.g. "session · ↻ 4h46m (2:30am)" and "week · ↻ 5d3h (Jul 3 2:30am)".
 
-session_id=$(echo "$input" | jq -r '.session_id // "unknown"')
-session_cost=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
+# fmt_reset <epoch>: set globals reset_in (countdown) and reset_clock (local
+# time, prefixed with "Mon D" when the reset isn't today). Countdown shows days
+# when >=24h out ("5d3h"), else hours+minutes ("4h46m"). Both empty if epoch<=0.
+fmt_reset() {
+  reset_in=""; reset_clock=""
+  [ "${1:-0}" -gt 0 ] 2>/dev/null || return
+  local epoch="$1" secs rday tday mday
+  secs=$(( epoch - $(date +%s) ))
+  [ "$secs" -lt 0 ] && secs=0
+  if [ "$secs" -ge 86400 ]; then
+    reset_in=$(printf '%dd%dh' $(( secs / 86400 )) $(( (secs % 86400) / 3600 )))
+  else
+    reset_in=$(printf '%dh%02dm' $(( secs / 3600 )) $(( (secs % 3600) / 60 )))
+  fi
+  # Local clock (BSD `date -r`, GNU `date -d @` fallback), lowercased am/pm.
+  reset_clock=$(date -r "$epoch" '+%-I:%M%p' 2>/dev/null \
+               || date -d "@$epoch" '+%-I:%M%p' 2>/dev/null)
+  reset_clock=$(printf '%s' "$reset_clock" | tr 'APM' 'apm')
+  # Prefix the month/day when the reset falls on a later calendar day.
+  rday=$(date -r "$epoch" '+%Y%m%d' 2>/dev/null || date -d "@$epoch" '+%Y%m%d' 2>/dev/null)
+  tday=$(date '+%Y%m%d')
+  if [ -n "$rday" ] && [ "$rday" != "$tday" ]; then
+    mday=$(date -r "$epoch" '+%b %-d' 2>/dev/null || date -d "@$epoch" '+%b %-d' 2>/dev/null)
+    reset_clock="${mday} ${reset_clock}"
+  fi
+}
 
-# Reset state at the start of a new day (or if the file is missing/corrupt).
-if [ ! -f "$state" ] || [ "$(jq -r '.date // empty' "$state" 2>/dev/null)" != "$today" ]; then
-  printf '{"date":"%s","sessions":{}}' "$today" > "$state"
-fi
+# Session (5-hour) window — drives line 4. Labels padded to 8 so the "·" and the
+# reset detail line up vertically between the session and weekly rows.
+rate_used=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // 0')
+fmt_reset "$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // 0')"
+usage_detail="$(printf '%-8s' session)· ↻ ${reset_in:-?} (${reset_clock:-?})"
 
-# Record this session's cumulative cost (max guards against a transient 0
-# overwriting a real value), then sum all of today's sessions. Write via a
-# temp file + atomic mv so concurrent renders can't corrupt the state.
-tmp=$(mktemp)
-if jq --arg sid "$session_id" --argjson c "$session_cost" \
-     '.sessions[$sid] = ([.sessions[$sid] // 0, $c] | max)' \
-     "$state" > "$tmp" 2>/dev/null; then
-  mv "$tmp" "$state"
-else
-  rm -f "$tmp"
-fi
-
-daily_total=$(jq -r '[.sessions[]] | add // 0' "$state" 2>/dev/null)
-[ -z "$daily_total" ] && daily_total=0
-
-# Percentage of the daily budget consumed (drives the usage bar), capped at 100.
-rate_used=$(awk "BEGIN { p = $daily_total / $DAILY_BUDGET * 100; if (p > 100) p = 100; printf \"%.2f\", p }")
-# Dollar detail shown next to the bar, e.g. "\$6.50/\$300".
-usage_detail=$(awk "BEGIN { printf \"\$%.0f/\$%d\", $daily_total, $DAILY_BUDGET }")
+# Weekly (7-day) window — drives line 5.
+week_used=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // 0')
+fmt_reset "$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // 0')"
+week_detail="$(printf '%-8s' week)· ↻ ${reset_in:-?} (${reset_clock:-?})"
 
 label="${model:-Claude}"
 
@@ -92,12 +101,13 @@ pillcap=$'\033[38;5;97m'     # pill end-cap glyph color (matches the background)
 cyan=$'\033[38;5;212m'       # pink — thinking mode widget
 orange=$'\033[38;5;208m'
 horange=$'\033[1;38;5;208m'  # bright bold orange — highlights the context number
-dorange=$'\033[38;5;166m'    # darker orange — context bar (distinct from the $ usage bar)
+dorange=$'\033[38;5;166m'    # darker orange — context bar (distinct from the limit bars)
 yellow=$'\033[38;5;220m'
 red=$'\033[38;5;196m'
 dkgreen=$'\033[38;5;28m'
 green=$'\033[38;5;40m'       # green — untracked file count
-hgreen=$'\033[1;38;5;46m'   # bright bold green — highlights the usage number
+hgreen=$'\033[1;38;5;46m'   # bright bold green — highlights the session usage number
+hcyan=$'\033[1;38;5;51m'    # bright bold cyan — highlights the weekly usage number
 
 # Git segment: branch + modified/untracked counts + ahead/behind (empty outside a repo).
 git_seg=""
@@ -157,19 +167,43 @@ fill_count() { awk "BEGIN { f = int($1/10 + 0.5); if (f>10) f=10; if (f<0) f=0; 
 # $1=colored bar  $2=number color  $3=integer percent  $4=dim detail
 fmt_row() { printf '%s %s%3d%%%s   %s%s%s' "$1" "$2" "$3" "$reset" "$dim" "$4" "$reset"; }
 
-# --- Assemble the status bar -----------------------------------------------
+# Build a usage-limit row: a 10-segment bar (filled in $3, empty dim), the
+# highlighted integer percent (number color $4, default bright green), then the
+# dim detail. The caller picks the color scheme so each window can differ.
+# $1=percentage (0-100)  $2=detail  $3=filled-bar color  $4=number color (optional)
+limit_row() {
+  local pct fill
+  pct=$(printf '%.0f' "${1:-0}")
+  fill=$(fill_count "${1:-0}")
+  build_bar "$fill" "$(( 10 - fill ))"
+  fmt_row "${3}${filled_bar}${reset}${dim}${empty_bar}${reset}" "${4:-$hgreen}" "$pct" "$2"
+}
 
-# Usage (daily budget) bar — always present.
-urate=$(printf '%.0f' "${rate_used:-0}")
-ufill=$(fill_count "${rate_used:-0}")
-build_bar "$ufill" "$(( 10 - ufill ))"
-ubarcol="$dkgreen"
-if   [ "$urate" -ge 100 ]; then ubarcol="$red"
-elif [ "$urate" -ge 80 ];  then ubarcol="$orange"
-elif [ "$urate" -ge 50 ];  then ubarcol="$yellow"
+# --- Assemble the status bar -----------------------------------------------
+# Model on its own line, then one aligned row per bar. Both bars start at
+# column 0 (no leading whitespace) so alignment survives however the status
+# line UI handles indentation.
+
+# Limit rows — session (5h) and weekly (7d) windows, both always present.
+
+# Session bar: severity color — green -> yellow (>=50) -> orange (>=80) -> red (>=100).
+srate=$(printf '%.0f' "${rate_used:-0}")
+sev_col="$dkgreen"
+if   [ "$srate" -ge 100 ]; then sev_col="$red"
+elif [ "$srate" -ge 80 ];  then sev_col="$orange"
+elif [ "$srate" -ge 50 ];  then sev_col="$yellow"
 fi
-usage_bar="${ubarcol}${filled_bar}${reset}${dim}${empty_bar}${reset}"
-usage_row=$(fmt_row "$usage_bar" "$hgreen" "$urate" "$usage_detail")
+usage_row=$(limit_row "$rate_used" "$usage_detail" "$sev_col")
+
+# Weekly bar: cyan that darkens toward black as the window fills — bright cyan at
+# 0%, black at 100% ("run out"). Shades are the 256-color cube's cyan->black
+# diagonal (g=b stepping 5..0 -> 51 44 37 30 23 16); deeper usage picks a darker
+# one. The percent stays bright cyan so the row stays legible when the bar darkens.
+wrate=$(printf '%.0f' "${week_used:-0}")
+cyan_ramp=(51 44 37 30 23 16)
+widx=$(( wrate * 5 / 100 )); [ "$widx" -gt 5 ] && widx=5; [ "$widx" -lt 0 ] && widx=0
+week_col=$'\033[38;5;'"${cyan_ramp[$widx]}m"
+week_row=$(limit_row "$week_used" "$week_detail" "$week_col" "$hcyan")
 
 # Environment segment: detect the project's language(s) from marker files /
 # source extensions in the working dir, then show each toolchain's version.
@@ -267,8 +301,8 @@ if [ -n "$used" ]; then
   ctx_row=$(fmt_row "$ctx_bar" "$dorange" "$cpct" "$ctx_detail")
 fi
 
-# Assemble: header lines, optional context row, daily budget row.
+# Assemble: header lines, optional context row, then session + weekly limit rows.
 out="${info_line}"$'\n'"${top_line}"
 [ -n "$ctx_row" ] && out="${out}"$'\n'"${ctx_row}"
-out="${out}"$'\n'"${usage_row}"
+out="${out}"$'\n'"${usage_row}"$'\n'"${week_row}"
 printf '%s' "$out"

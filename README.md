@@ -4,13 +4,14 @@ Portable [Claude Code](https://claude.com/claude-code) configuration to reuse ac
 
 ## `statusline-command.sh`
 
-A custom status line that renders up to four lines. Here's an annotated mock-up:
+A custom status line that renders up to five lines. Here's an annotated mock-up:
 
 ```
 ( Opus 4.8 ) high  Sonnet 4.6  Haiku 4.5  │  🐍 3.11.5  ⬡ 18.17.0   ← line 1: model picker + effort | languages
 ~/Code/Home/claude-settings  │  ⎇ main *3 +2 ↑1                      ← line 2: working dir | git status
 ██████░░░░  58%   580k/1M                                            ← line 3: context window usage
-███░░░░░░░  31%   $93/$300                                           ← line 4: daily budget usage
+██░░░░░░░░  23%   session · ↻ 3h08m (2:30am)                         ← line 4: session (5h) limit + reset
+█████░░░░░  50%   week    · ↻ 4d20h (Jul 3 8:00pm)                   ← line 5: weekly (7d) limit + reset
 ```
 
 Claude Code pipes a JSON payload to the script on stdin on every render; each field below names where the value comes from.
@@ -69,16 +70,27 @@ Add a language by appending one `"icon|version-command|marker globs"` row to the
 | Bar + `%` | `██████░░░░ 58%` | Context window used | `.context_window.used_percentage` (or `100 − remaining_percentage`), rounded to a 0–10 segment bar. |
 | Detail | `580k/1M` | Tokens used / window size | `(.total_input_tokens + .total_output_tokens)` over `.context_window_size`, formatted compactly (`580k`, `1M`). |
 
-### Line 4 — daily budget bar (green → yellow → orange → red)
+### Line 4 — session limit bar (green → yellow → orange → red)
+
+Mirrors the **"Current session"** window in `/usage` — the rolling **5-hour** usage limit.
 
 | Element | Example | Represents | How it's retrieved / calculated |
 |---|---|---|---|
-| Bar + `%` | `███░░░░░░░ 31%` | Spend vs daily budget | Daily total ÷ `DAILY_BUDGET` (default `300`). Color escalates: green → yellow (≥50%) → orange (≥80%) → red (≥100%). |
-| Detail | `$93/$300` | Today's spend / budget | The payload only reports **per-session** cost (`.cost.total_cost_usd`, which resets each session), so the script persists each session's cost to `~/.claude/daily-usage.json` keyed by date, then **sums all of today's sessions** to get the true daily total. Written atomically (temp file + `mv`) so concurrent renders can't corrupt the state. |
+| Bar + `%` | `██░░░░░░░░ 23%` | Session usage | `.rate_limits.five_hour.used_percentage`, rounded to a 0–10 segment bar. Color escalates: green → yellow (≥50%) → orange (≥80%) → red (≥100%). |
+| Detail | `session · ↻ 3h08m (2:30am)` | Time until reset + local reset clock | Countdown and reset time derived from `.rate_limits.five_hour.resets_at` (a Unix epoch). The month/day is prefixed (`Jun 29 2:30am`) only when the reset falls on a later calendar day. |
 
-Lines 3 and 4 share a fixed-width (10-char) bar and right-padded percentage so their detail columns line up. Line 3 is omitted before the first message (no context data yet).
+### Line 5 — weekly limit bar (cyan, darkening to black)
 
-Tunables at the top of the script: `DAILY_BUDGET` (default `300`) and the 256-color constants.
+Mirrors the **"Current week"** window in `/usage` — the rolling **7-day** usage limit.
+
+| Element | Example | Represents | How it's retrieved / calculated |
+|---|---|---|---|
+| Bar + `%` | `█████░░░░░ 50%` | Weekly usage | `.rate_limits.seven_day.used_percentage`, rounded to a 0–10 segment bar. The cyan **darkens as the window fills** — bright cyan (`51`) at 0%, stepping down the 256-color cube's cyan→black diagonal (`51 44 37 30 23 16`) to **black at 100%** ("run out"). The percentage stays bright cyan so the row is legible even when the bar goes dark. |
+| Detail | `week · ↻ 4d20h (Jul 3 8:00pm)` | Time until reset + reset date | Countdown and reset time from `.rate_limits.seven_day.resets_at`. The countdown switches to days+hours (`4d20h`) when ≥24h out, and the reset clock is prefixed with the month/day (`Jul 3`). |
+
+Both limit windows come straight from the status-line payload — no external state file is needed; the platform tracks usage. Lines 3–5 share a fixed-width (10-char) bar and right-padded percentage so their detail columns line up, and the `session`/`week` labels are padded so their `·` and reset times align. Line 3 is omitted before the first message (no context data yet).
+
+Tunables: the 256-color constants near the top of the script, and the weekly bar's `cyan_ramp` (the cyan→black shades) in the assembly section near the bottom.
 
 ### Install
 
@@ -111,7 +123,7 @@ Add this block to `~/.claude/settings.json` (replace `<you>` with your username)
 
 **Step 4 — (Optional) Tune it**
 
-Edit the top of `~/.claude/statusline-command.sh` to change `DAILY_BUDGET` (default `300`) or the 256-color constants.
+Edit the 256-color constants near the top of `~/.claude/statusline-command.sh`, or the weekly bar's `cyan_ramp` (cyan→black fade) further down, to taste. To customize the model picker, edit the `MODELS` list.
 
 **Step 5 — Reload**
 
